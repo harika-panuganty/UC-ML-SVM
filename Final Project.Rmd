@@ -1,0 +1,404 @@
+---
+title: "Machine Learning Final Project"
+author: "Harika Panuganty"
+date: "August 29, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(caret)
+library(pROC)
+library(ggplot2)
+library(kernlab)
+library(e1071)
+
+```
+
+
+
+##Loading in Gusto Data
+```{r}
+gusto_train <- read.csv("C:/Users/trevo/Desktop/Machine Learning/gusto_train.csv")
+gusto_test <- read.csv("C:/Users/trevo/Desktop/Machine Learning/gusto_test.csv")
+
+gusto_train$DAY30 <- as.factor(gusto_train$DAY30)
+gusto_test$DAY30 <- as.factor(gusto_test$DAY30)
+```
+
+
+##Table One Code
+```{r}
+gusto_data <- read.csv("~/Desktop/datasets/gusto_data.csv")
+
+myvars1 <- c("AGE", "SEX", "WEI","HEI")
+catVars1 <- c("DAY30", "SEX")
+Q1Table1 <- CreateTableOne(vars = myvars1, data = gusto_data, factorVars = catVars1, strata = c("DAY30"))
+Q1Table1
+
+#T-test for age by DAY30
+gusto_t<- t.test(AGE ~ DAY30, data = gusto_data)
+gusto_t
+
+#Chi-Square for SEX
+gustogenderXsq <- chisq.test(gusto_data$SEX, gusto_data$DAY30, correct = FALSE)
+gustogenderXsq
+
+#T-test for weight by day30
+gusto_t2<- t.test(WEI ~ DAY30, data = gusto_data)
+gusto_t2
+
+#t-test for height by Day30
+gusto_t3<- t.test(HEI ~ DAY30, data = gusto_data)
+gusto_t3
+
+```
+
+
+#Training SVM
+```{r}
+set.seed(314)
+# Setup for cross validation
+objGrid <- expand.grid(C = c(0.01, 0.1, 1, 10, 100, 1000))
+fitControl <- trainControl(method="cv",  
+                     number =5)
+gusto1.svm <- train(DAY30 ~ . , data = gusto_train, 
+                    method = "svmLinear",
+                    trControl = fitControl,
+                    tuneGrid = objGrid)
+```
+
+
+
+#Print Model, and classification matrix
+```{r}
+#gusto1.svm
+
+prediction <- predict(gusto1.svm, gusto_test)
+
+gusto_test$prediction <- predict(gusto1.svm, gusto_test)
+
+gusto1_table <- table(gusto_test$DAY30, prediction)
+print(gusto1_table)
+```
+
+
+#Linear Kernal AUC
+```{r}
+gusto_test$prediction <- as.numeric(gusto_test$prediction)
+gustoperf <- roc(response = gusto_test$DAY30,
+                       predictor = gusto_test$prediction)
+
+
+#print AUC and CI
+print(pROC::auc(gustoperf))
+print(pROC::ci.auc(gustoperf))
+```
+
+
+#Using a Non-Linear Model/Radial Model
+```{r}
+gusto2.svm <- svm(DAY30 ~ ., data = gusto_train, 
+                  kernel = "radial", 
+                  gamma = 2, 
+                  cost = 1)
+```
+
+
+#Print Model, and classification matrix
+```{r}
+gusto_test$prediction2 <- predict(gusto2.svm, gusto_test)
+prediction2 <- predict(gusto2.svm, gusto_test)
+
+gusto2table <- table(gusto_test$DAY30, prediction2)
+prop.table(gusto2table)
+print(gusto2table)
+```
+
+#AUC for non-SMOTE Radial
+```{r}
+gusto_test$prediction2 <- as.numeric(gusto_test$prediction2)
+gustoperf2 <- roc(response = gusto_test$DAY30,
+                       predictor = gusto_test$prediction2)
+
+
+#print AUC and CI
+print(pROC::auc(gustoperf2))
+print(pROC::ci.auc(gustoperf2))
+```
+
+
+
+#Tuning the SVM
+
+```{r}
+x <- subset(gusto_train, select = -(DAY30))
+y <- subset(gusto_train, select = (DAY30))
+
+output.tune <- tune(svm, DAY30 ~ ., data = gusto_train, kernel = "radial",
+                    ranges = list(costs = c(0.01, 0.1, 1, 10, 100, 1000), 
+                                  gamma = c(0.1, 0.5, 1, 2, 3, 4)))
+
+print(output.tune)
+```
+
+
+#Using a Non-Linear Model, after tuning
+```{r}
+tunedgusto2.svm <- svm(DAY30 ~ ., data = gusto_train, 
+                  kernel = "radial", 
+                  gamma = 3, 
+                  cost = 0.01)
+
+summary(tunedgusto2.svm)
+```
+
+
+
+#Print Tuned Model, and classification matrix
+```{r}
+tunedprediction1 <- predict(tunedgusto2.svm, gusto_test)
+gusto_test$tunedprediction1 <- predict(tunedgusto2.svm, gusto_test)
+tunedgusto2table <- table(gusto_test$DAY30, tunedprediction1)
+prop.table(tunedgusto2table)
+print(tunedgusto2table)
+```
+
+
+#AUC for tuned non-SMOTE radial
+```{r}
+gusto_test$tunedprediction1 <- as.numeric(gusto_test$tunedprediction1)
+gustoperf3 <- roc(response = gusto_test$DAY30,
+                       predictor = gusto_test$tunedprediction1)
+
+
+print(pROC::auc(gustoperf3))
+print(pROC::ci.auc(gustoperf3))
+```
+
+
+
+#Pre-Processing with SMOTE
+```{r}
+library(DMwR)
+gusto_trainSampled <- SMOTE(DAY30 ~ ., data = gusto_train,
+                            perc.over = 100, perc.under =200, k = 1)
+
+#perc.under set to 200 to make the outcomes a 50/50 split
+```
+
+
+
+#Training SVM on SMOTE data
+```{r}
+set.seed(314)
+# Setup for cross validation
+objGrid <- expand.grid(C = c(0.01, 0.1, 1, 10, 100, 1000))
+fitControl <- trainControl(method="cv",  
+                     number =5)
+SMOTEgusto1.svm <- train(DAY30 ~ . , data = gusto_trainSampled, 
+                    method = "svmLinear",
+                    trControl = fitControl,
+                    tuneGrid = objGrid)
+```
+
+
+
+
+#Print Model, and classification matrix
+```{r}
+gusto_test$SMOTEprediction <- predict(SMOTEgusto1.svm, gusto_test)
+SMOTEprediction <- predict(SMOTEgusto1.svm, gusto_test)
+SMOTEgusto1table <- table(gusto_test$DAY30, SMOTEprediction)
+prop.table(SMOTEgusto1table)
+print(SMOTEgusto1table)
+
+
+```
+
+
+
+#SMOTE Linear Kernel AUC
+```{r}
+gusto_test$SMOTEprediction <- as.numeric(gusto_test$SMOTEprediction)
+gusto_perf <- roc(response = gusto_test$DAY30,
+                       predictor = gusto_test$SMOTEprediction)
+
+
+print(pROC::auc(gusto_perf))
+print(pROC::ci.auc(gusto_perf))
+```
+
+
+
+#Using a Non-Linear Model, SMOTE data
+```{r}
+SMOTEgusto2.svm <- svm(DAY30 ~ ., data = gusto_trainSampled, 
+                  kernel = "radial", 
+                  gamma = 2, 
+                  cost = 1)
+```
+
+
+
+
+#Print Model, and classification matrix
+```{r}
+gusto_test$SMOTEpred2 <- predict(SMOTEgusto2.svm, gusto_test)
+
+SMOTEgusto2table <- table(gusto_test$DAY30, SMOTEprediction2)
+prop.table(SMOTEgusto2table)
+print(SMOTEgusto2table)
+
+
+##TPR = 32.5%
+##misclassified 4.2%
+```
+
+
+
+#SMOTE Radial Kernel AUC
+```{r}
+gusto_test$SMOTEpred2 <- as.numeric(gusto_test$SMOTEpred2)
+gusto2_perf <- roc(response = gusto_test$DAY30,
+                       predictor = gusto_test$SMOTEpred2)
+
+
+#print AUC and CI
+print(pROC::auc(gusto2_perf))
+print(pROC::ci.auc(gusto2_perf))
+```
+
+
+
+##SMOTE Confusion Matrix 
+```{r}
+# TP
+tp <- gusto_test %>%
+filter(DAY30 == 1 & SMOTEpred2 == 1) %>% nrow()
+# TN
+tn <- gusto_test %>%
+filter(DAY30 == 0 & SMOTEpred2 == 0) %>% nrow()
+# FP
+fp <- gusto_test %>%
+filter(DAY30 == 0 & SMOTEpred2 == 1) %>% nrow()
+# FN
+fn <- gusto_test %>%
+filter(DAY30 == 1 & SMOTEpred2 == 0) %>% nrow()
+```
+
+```{r}
+#Sensitivity (or TPR)
+tp/(tp+fn)
+## [1] 0.326
+#Specificity ( 1 - FPR)
+tn/(tn+fp)
+## [1] 0.9965
+
+#Accuracy
+(fp+tp)/(tp+tn+fp+fn)
+## [1] 0.023
+#FPR (1- Specificity)
+1 - (tn/(tn+fp))
+## [1] [1] 0.003409644
+
+#FNR
+fn/(fn+tp)
+#0.6740741
+```
+
+
+#Scatterplots, and Decision Boundary Plots
+
+```{r}
+#SMOTE plot for age vs weight
+library(caret)
+library(ggplot2)
+library(e1071)
+g <- ggplot(gusto_trainSampled, aes(x=AGE, y=WEI, color=DAY30)) + geom_point(shape=1) + ggtitle("SMOTE Plot Age and Weight")
+plot(g)
+
+ggsave("smoteplot.jpeg")
+
+
+```
+
+
+```{r}
+#Non-SMOTE plot for age vs weight
+library(caret)
+library(ggplot2)
+library(e1071)
+ng <- ggplot(gusto_train, aes(x=AGE, y=WEI, color=DAY30)) + geom_point(shape=1) + ggtitle("Non-SMOTE Plot Age and Weight")
+plot(ng)
+
+ggsave("nonsmoteplot.jpeg")
+
+
+```
+
+
+```{r}
+#for gusto1.svm linear (smote)
+library(e1071)
+library(ggplot2)
+library(caret)
+gusto1.svm <- svm(DAY30 ~ ., data = gusto_trainSampled, kernel="linear", cost = 100)
+#decisionplot(model, d.train, class = Y, main = "SVD (Linear)")
+plot(gusto1.svm, gusto_trainSampled, AGE~WEI)
+
+```
+
+```{r}
+#for gusto1.svm radial (smote)
+library(e1071)
+library(ggplot2)
+library(caret)
+gusto1.svm <- svm(DAY30 ~ ., data = gusto_trainSampled, kernel="radial", gamma = 2, cost = 1)
+#decisionplot(model, d.train, class = Y, main = "SVD (Linear)")
+plot(gusto1.svm, gusto_trainSampled, AGE~WEI)
+```
+
+
+```{r}
+#gusto2.svm <- svm(DAY30 ~ ., data = gusto_train, 
+#              kernel = "radial", 
+#              gamma = 2, 
+#              cost = 1)
+
+#plot(gusto2.svm, gusto_train, AGE~WEI)
+
+```
+
+```{r}
+#for gusto1.svm linear (non-smote)
+library(e1071)
+library(ggplot2)
+library(caret)
+gusto1.nlsvm <- svm(DAY30 ~ ., data = gusto_train, kernel="linear", cost = 100)
+#decisionplot(model, d.train, class = Y, main = "SVD (Linear)")
+plot(gusto1.nlsvm, gusto_train, AGE~WEI)
+
+
+```
+
+```{r}
+#for gusto1.svm radial (non-smote)
+library(e1071)
+library(ggplot2)
+library(caret)
+gusto1.nrsvm <- svm(DAY30 ~ ., data = gusto_train, kernel="radial", gamma = 2, cost = 1)
+#decisionplot(model, d.train, class = Y, main = "SVD (Linear)")
+plot(gusto1.nrsvm, gusto_train, AGE~WEI)
+
+
+```
+
+
+
+
+
