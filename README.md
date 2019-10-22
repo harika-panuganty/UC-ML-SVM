@@ -1,6 +1,6 @@
 # UC-ML-SVM
 
-This group project for my Intermediate Applied Data Analysis class from the MscBMI Program at The University of Chicago involved running SVM Models. The code for this repository elaborates on the specific code used to run Support Vector Machine Models for a Kaggle dataset https://www.kaggle.com/c/gusto/data in R:
+This group project for my Machine Learning for Biomedical Informatics class from the MscBMI Program at The University of Chicago involved running SVM Models. The code for this repository elaborates on the specific code used to run Support Vector Machine Models for a Kaggle dataset https://www.kaggle.com/c/gusto/data in R:
 
 We ran five SVM Models to determine which was the best fit for the data, based on the results:
 1. Support Vector Machine with Linear Kernel
